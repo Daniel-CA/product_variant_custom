@@ -1,6 +1,6 @@
 # Copyright 2020 Mikel Arregi Etxaniz - AvanzOSC
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
-from odoo import api, fields, models, exceptions, _
+from odoo import api, models
 
 
 class SaleOrderLine(models.Model):
@@ -14,6 +14,7 @@ class SaleOrderLine(models.Model):
         #     raise exceptions.Warning(_("select a version before create a "
         #                                "manufaturing order"))
         res = super()._action_mrp_dict()
+        res['product_tmpl_id'] = self.product_tmpl_id.id
         res['product_attribute_ids'] = [(0, 0, {
             'attribute_id': x.attribute_id.id,
             'value_id': x.value_id.id
@@ -34,6 +35,20 @@ class SaleOrderLine(models.Model):
                 sale_line.product_attribute_ids.copy_to(production_id,
                                                         'product_attribute_ids'
                                                         )
+                sale_line.product_version_id = sale_line.product_version_id
+
+    def get_product_dict(self, tmpl_id, attributes):
+        values = attributes.mapped("value_id.id")
+        return {
+            'product_tmpl_id': tmpl_id.id,
+            'attribute_value_ids': [(6, 0, values)],
+            'active': tmpl_id.active,
+        }
+
+    def create_product_product(self, template=None, attributes=None):
+        if template and attributes:
+            product_dict = self.get_product_dict(template, attributes)
+            return self.env['product.product'].create(product_dict)
 
     @api.multi
     def _action_launch_stock_rule(self):
@@ -47,10 +62,15 @@ class SaleOrderLine(models.Model):
                             'value_id': custom.value_id.id,
                             'custom_value': custom.custom_value,
                         }))
+                if not line.product_id:
+                    line.product_id = line.create_product_product(line.product_tmpl_id, line.product_attribute_ids)
                 super(SaleOrderLine, line.with_context(extra_fields={
+                    'product_tmpl_id': line.product_tmpl_id.id,
                     'product_version_id': line.product_version_id.id,
-                    'product_attribute_ids':
-                        line.product_id.get_custom_value_lines(),
+                    'product_attribute_ids': [(0, 0, {
+                        'attribute_id': x.attribute_id.id,
+                        'value_id': x.value_id.id
+                    }) for x in line.product_attribute_ids],
                     'custom_value_ids': custom_value_ids,
                 }))._action_launch_stock_rule()
         return True
