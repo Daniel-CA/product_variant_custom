@@ -11,6 +11,24 @@ class ProductProduct(models.Model):
     product_version_count = fields.Integer(string="Versions",
                                            compute="compute_product_versions")
 
+    def get_product_dict(self, tmpl_id, attributes):
+        values = attributes.mapped("value_id.id")
+        return {
+            'product_tmpl_id': tmpl_id.id,
+            'attribute_value_ids': [(6, 0, values)],
+            'active': tmpl_id.active,
+        }
+
+    @api.multi
+    def _get_product_attributes_values_dict(self):
+        # Retrieve first the attributes from template to preserve order
+        res = self.product_tmpl_id._get_product_attributes_dict()
+        for val in res:
+            value = self.attribute_value_ids.filtered(
+                lambda x: x.attribute_id.id == val['attribute_id'])
+            val['value_id'] = value.id
+        return res
+
     @api.depends('product_version_ids')
     def compute_product_versions(self):
         for product in self:
@@ -61,6 +79,34 @@ class ProductProduct(models.Model):
         return domain, cont
 
     @api.model
+    def _build_attributes_domain(self, product_template, product_attributes):
+        domain = []
+        cont = 0
+        if product_template:
+            domain.append(('product_tmpl_id', '=', product_template.id))
+            for attr_line in product_attributes:
+                if isinstance(attr_line, dict):
+                    value_id = attr_line.get('value_id')
+                else:
+                    value_id = attr_line.value_id.id
+                if value_id:
+                    domain.append(('attribute_value_ids', '=', value_id))
+                    cont += 1
+        return domain, cont
+
+    @api.model
+    def _product_find(self, product_template, product_attributes):
+        if product_template:
+            domain, cont = self._build_attributes_domain(
+                product_template, product_attributes)
+            products = self.search(domain)
+            # Filter the product with the exact number of attributes values
+            for product in products:
+                if len(product.attribute_value_ids) == cont:
+                    return product
+        return False
+
+    @api.model
     def _find_version(self, custom_values):
         if self:
             versions = self.env['product.version'].search(
@@ -74,38 +120,19 @@ class ProductProduct(models.Model):
                     return version
         return False
 
-    def _all_attribute_lines_filled(self, attributes):
-        for value in attributes:
-            if not str(value.value_id):
-                return False
-        return True
-
-    def get_product_dict(self, tmpl_id, attributes):
-        values = attributes.mapped("value_id.id")
-        return {
-            'product_tmpl_id': tmpl_id.id,
-            'attribute_value_ids': [(6, 0, values)],
-            'active': tmpl_id.active,
-        }
-
-    def create_product_product(self, template=None, attributes=None):
-        if template and attributes:
-            product_id = self._product_find(template, attributes)
-            if not product_id and self._all_attribute_lines_filled(attributes):
-                product_dict = self.get_product_dict(template, attributes)
-                return self.create(product_dict)
-
 
 class ProductAttributeLine(models.AbstractModel):
     _name = 'product.attribute.line'
+    _description = 'Product Attribute Line'
 
     product_tmpl_id = fields.Many2one(comodel_name="product.template")
     attribute_id = fields.Many2one(comodel_name='product.attribute',
-                                string='Attribute')
-    value_id = fields.Many2one(comodel_name='product.attribute.value',
-                               domain="[('attribute_id', '=', attribute_id),"
-                               "('id', 'in', possible_value_ids)]",
-                               string='Value')
+                                   string='Attribute')
+    value_id = fields.Many2one(
+        comodel_name='product.attribute.value',
+        domain="[('attribute_id', '=', attribute_id),"
+               "('id', 'in', possible_value_ids)]",
+        string='Value')
     possible_value_ids = fields.Many2many(
         comodel_name='product.attribute.value',
         compute='_get_possible_attribute_values')
