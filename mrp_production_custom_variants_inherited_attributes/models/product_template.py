@@ -2,19 +2,11 @@
 # Copyright 2019 Oihane Crucelaegui - AvanzOSC
 # Copyright 2019 Pedro M. Baeza <pedro.baeza@tecnativa.com>
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
-from odoo import models, fields, api, _
+from odoo import models, api
 
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
-
-    @api.multi
-    def _get_product_attributes_dict(self):
-        if not self:
-            return []
-        self.ensure_one()
-        return self.attribute_line_ids.mapped(
-            lambda x: {'attribute_id': x.attribute_id.id})
 
     def _get_product_attribute_ids_inherit_dict(self, product_attribute_list):
         product_attribute_ids = self._get_product_attributes_dict()
