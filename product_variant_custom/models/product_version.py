@@ -5,6 +5,7 @@ from odoo import api, exceptions, fields, models, _
 
 class ProductVersion(models.Model):
     _name = "product.version"
+    _description = "Product Version"
 
     name = fields.Char(string="Name")
     product_tmpl_id = fields.Many2one(related="product_id.product_tmpl_id")
@@ -53,24 +54,28 @@ class ProductVersion(models.Model):
             'custom_value_ids': custom_value_ids,
         }
 
-    def _all_custom_lines_filled(self, custom_value_ids):
-        for custom in custom_value_ids:
-            if not str(custom.custom_value) or custom.custom_value is None:
-                return False
-        return True
+    def _create_version(self, product_id, custom_values):
+        product_version = False
+        if product_id and custom_values.filtered(lambda x: x.custom_value):
+            version_values = self.get_version_dict(product_id, custom_values)
+            product_version = self.env["product.version"].create(
+                version_values)
+        return product_version
 
-    def create_product_version(self, product_id=None, custom_value_ids=None):
-        if product_id and self._all_custom_lines_filled(custom_value_ids):
-            version_obj = self.env['product.version']
-            version = self.product_id._find_version(self.custom_value_ids)
-            if not version:
-                version_dict = self.product_version_id.get_version_dict(
-                    self.product_id, self.custom_value_ids)
-                return version_obj.create(version_dict)
+    def _find_version(self, product_id, custom_values):
+        product = self.env['product.product'].browse(product_id)
+        return product._find_version(custom_values)
+
+    def _find_create_version(self, product_id, custom_values):
+        version = self._find_version(product_id, custom_values)
+        if not version:
+            version = self._create_version(product_id, custom_values)
+        return version
 
 
 class ProductVersionLine(models.Model):
     _name = "product.version.line"
+    _description = "Product Version Line"
 
     product_version_id = fields.Many2one(comodel_name="product.version")
     attribute_id = fields.Many2one(comodel_name="product.attribute",
@@ -102,6 +107,7 @@ class ProductVersionLine(models.Model):
 
 class VersionCustomLine(models.AbstractModel):
     _name = "version.custom.line"
+    _description = "Version Custom Line"
 
     attribute_id = fields.Many2one(comodel_name="product.attribute",
                                    string="Attribute")
@@ -141,7 +147,3 @@ class VersionCustomLine(models.AbstractModel):
                 'custom_value': attribute_line.custom_value,
             }))
         instance[field] = copy_fields
-
-
-
-
